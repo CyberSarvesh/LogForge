@@ -114,7 +114,7 @@ pre{margin:0;background:var(--panel2);border:1px solid var(--line);border-radius
       <div class="stat"><div class="v" id="mP50">–</div><div class="l">p50 latency ms</div></div>
       <div class="stat"><div class="v" id="mP95">–</div><div class="l">p95 latency ms</div></div>
       <div class="stat"><div class="v" id="mSent">0</div><div class="l">logs stored</div></div>
-      <div class="stat"><div class="v" id="mErr">0</div><div class="l">errors / 429</div></div>
+      <div class="stat"><div class="v" id="mErr">0</div><div class="l">errors / 429 / 503</div></div>
     </div>
     <canvas id="tpChart" height="90" style="margin-top:12px"></canvas>
   </section>
@@ -132,6 +132,31 @@ pre{margin:0;background:var(--panel2);border:1px solid var(--line);border-radius
       <div class="speedup" id="speedup">–</div><div class="muted" id="speedupL">run the benchmark to measure</div>
     </div>
     <p class="hint" id="benchNote">Numbers come from your machine's real measurements. Nothing is simulated or hard-coded.</p>
+  </section>
+
+  <!-- SERVER VITALS -->
+  <section class="c12">
+    <h2>Server vitals <span class="sub">measured inside the Node process and its Postgres pool, refreshed every second</span></h2>
+    <div class="stats" style="margin-top:0">
+      <div class="stat" id="vCpu"><div class="v">–</div><div class="l">Node CPU %</div></div>
+      <div class="stat" id="vLag"><div class="v">–</div><div class="l">event-loop lag p99 ms</div></div>
+      <div class="stat" id="vInfl"><div class="v">–</div><div class="l">requests in flight</div></div>
+      <div class="stat" id="vPool"><div class="v">–</div><div class="l">DB pool busy / max</div></div>
+      <div class="stat" id="vWait"><div class="v">–</div><div class="l">queued for a DB conn</div></div>
+      <div class="stat" id="vMem"><div class="v">–</div><div class="l">heap MB</div></div>
+      <div class="stat" id="vShed"><div class="v">–</div><div class="l">shed (503) / limited (429)</div></div>
+    </div>
+  </section>
+
+  <!-- STRESS RAMP -->
+  <section class="c12">
+    <h2>Find the limit <span class="sub">ramps load in stages and watches where throughput stops growing</span></h2>
+    <div class="row" style="align-items:center">
+      <div style="flex:0 0 auto"><button class="primary" id="rampBtn">Run stress ramp (~25 s)</button></div>
+      <div class="muted" id="rampStatus" style="flex:3">Five stages, 4 s each: 1, 2, 4, then 6 parallel connections (the browser's per-host cap), then bigger batches. Writes real rows.</div>
+    </div>
+    <div id="rampRows" class="bench"></div>
+    <div id="rampVerdict" style="margin-top:12px"></div>
   </section>
 
   <!-- LIVE TAIL -->
@@ -248,7 +273,7 @@ document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => {
 });
 
 function makeRun(opts){
-  return {opts, logs:0, reqs:0, errors:0, limited:0, lat:[], stop:false, t0:performance.now(), done:null};
+  return {opts, logs:0, reqs:0, errors:0, limited:0, shed:0, lat:[], stop:false, t0:performance.now(), done:null};
 }
 async function worker(run){
   const {mode, batch} = run.opts;
@@ -266,6 +291,7 @@ async function worker(run){
     run.reqs++;
     if(res.status === 201){ run.logs += n; run.lat.push(ms); if(run.lat.length > 4000) run.lat.shift(); }
     else if(res.status === 429){ run.limited++; await new Promise(r=>setTimeout(r,100)); }
+    else if(res.status === 503){ run.shed++; await new Promise(r=>setTimeout(r,150)); } // server shed load: back off
     else run.errors++;
   }
 }
@@ -306,7 +332,7 @@ setInterval(() => {
   const recent = run.lat.slice(-300);
   $('mP50').textContent = recent.length ? pct(recent,.5).toFixed(0) : '–';
   $('mP95').textContent = recent.length ? pct(recent,.95).toFixed(0) : '–';
-  $('mErr').textContent = `${run.errors} / ${run.limited}`;
+  $('mErr').textContent = `${run.errors} / ${run.limited} / ${run.shed}`;
   storedTotal = run.logs; $('mSent').textContent = fmt(run.logs);
   drawThroughput();
 }, 500);
@@ -336,10 +362,76 @@ $('benchBtn').onclick = async () => {
   loadStats(); search(true);
 };
 
+/* ---------- server vitals ---------- */
+let vMax = null; // peak vitals while a ramp stage runs
+function tone(el, level, value){ el.querySelector('.v').textContent = value; el.querySelector('.v').style.color = level === 2 ? 'var(--error)' : level === 1 ? 'var(--warn)' : 'var(--ok)'; }
+async function vitals(){
+  const r = await api('GET','/metrics',null,{record:false});
+  if(r.status !== 200) return;
+  const m = r.data, p = m.pool;
+  tone($('vCpu'), m.cpuPct > 90 ? 2 : m.cpuPct > 65 ? 1 : 0, m.cpuPct.toFixed(0) + '%');
+  tone($('vLag'), m.loopLagP99Ms > 100 ? 2 : m.loopLagP99Ms > 30 ? 1 : 0, m.loopLagP99Ms.toFixed(0));
+  tone($('vInfl'), 0, m.inflight);
+  tone($('vPool'), p.busy >= p.max ? 2 : p.busy >= p.max * .7 ? 1 : 0, `${p.busy} / ${p.max}`);
+  tone($('vWait'), p.waiting > 25 ? 2 : p.waiting > 0 ? 1 : 0, p.waiting);
+  tone($('vMem'), m.heapMb > 700 ? 2 : m.heapMb > 400 ? 1 : 0, m.heapMb);
+  tone($('vShed'), m.requests.shed > 0 ? 2 : m.requests.limited > 0 ? 1 : 0, `${m.requests.shed} / ${m.requests.limited}`);
+  if(vMax){ vMax.cpu = Math.max(vMax.cpu, m.cpuPct); vMax.lag = Math.max(vMax.lag, m.loopLagP99Ms); vMax.wait = Math.max(vMax.wait, p.waiting); vMax.busy = Math.max(vMax.busy, p.busy); vMax.max = p.max; vMax.heap = Math.max(vMax.heap, m.heapMb); }
+}
+vitals(); setInterval(vitals, 1000);
+
+/* ---------- stress ramp ---------- */
+const RAMP = [{conc:1,batch:500},{conc:2,batch:500},{conc:4,batch:500},{conc:6,batch:500},{conc:6,batch:1000}];
+$('rampBtn').onclick = async () => {
+  const btn = $('rampBtn'); btn.disabled = true; $('benchBtn').disabled = true; $('startBtn').disabled = true;
+  $('rampRows').innerHTML = ''; $('rampVerdict').innerHTML = '';
+  const results = [];
+  for(let i = 0; i < RAMP.length; i++){
+    const s = RAMP[i];
+    $('rampStatus').textContent = `Stage ${i+1}/${RAMP.length}: ${s.conc} connections × ${s.batch} logs per request…`;
+    vMax = {cpu:0, lag:0, wait:0, busy:0, max:0, heap:0};
+    const run = startRun({mode:'batch', batch:s.batch, conc:s.conc}, 4000);
+    await run.done;
+    const secs = (performance.now() - run.t0) / 1000;
+    results.push({...s, lps: run.logs / secs, p50: pct(run.lat,.5), p95: pct(run.lat,.95), shed: run.shed, limited: run.limited, errors: run.errors, v: vMax});
+    vMax = null;
+    renderRamp(results);
+    await new Promise(r => setTimeout(r, 600)); // let the DB breathe between stages
+  }
+  verdict(results);
+  $('rampStatus').textContent = 'Done. Rows written are real; search and charts include them.';
+  btn.disabled = false; $('benchBtn').disabled = false; $('startBtn').disabled = false;
+  loadStats(); search(true);
+};
+function renderRamp(rs){
+  const max = Math.max(...rs.map(r => r.lps), 1);
+  $('rampRows').innerHTML = rs.map(r => `<div class="bar" style="grid-template-columns:150px 1fr 330px">
+    <span>${r.conc} conn × ${r.batch}</span>
+    <div class="track"><div class="fill batch" style="width:${r.lps/max*100}%"></div></div>
+    <span>${fmt(r.lps)} logs/s · p95 ${r.p95 == null ? '–' : r.p95.toFixed(0)}ms · cpu ${r.v.cpu.toFixed(0)}% · lag ${r.v.lag.toFixed(0)}ms${r.shed ? ' · <b class="s5xx">'+r.shed+' shed</b>' : ''}</span></div>`).join('');
+}
+function verdict(rs){
+  const peak = rs.reduce((a,b) => b.lps > a.lps ? b : a);
+  const first = rs[0];
+  // First stage after which no later stage beats the best so far by more than 10%.
+  const sat = rs.findIndex((r,i) => i > 0 && Math.max(...rs.slice(i).map(x => x.lps)) < Math.max(...rs.slice(0,i).map(x => x.lps)) * 1.1);
+  const v = peak.v;
+  let why;
+  if(rs.some(r => r.shed > 0)) why = 'The server started shedding load (503): requests queued for a database connection past the safe limit. Backpressure is protecting it from collapse.';
+  else if(v.busy >= v.max || v.wait > 0) why = `The Postgres connection pool is the bottleneck (${v.busy}/${v.max} busy, up to ${v.wait} queued). Raise DB_POOL_MAX, or the database itself is the limit.`;
+  else if(v.lag > 100 || v.cpu > 85) why = `The single Node process is CPU-bound (${v.cpu.toFixed(0)}% CPU, ${v.lag.toFixed(0)}ms event-loop lag), mostly JSON parsing and serialisation. Scale out with more processes behind a load balancer.`;
+  else why = 'Neither Node nor the connection pool is saturated, so this is probably the Postgres write path or this browser\'s 6-connection cap. To push further, drive it with an external tool such as autocannon or k6.';
+  $('rampVerdict').innerHTML = `<div style="display:flex;gap:18px;align-items:baseline;flex-wrap:wrap"><div class="speedup">${fmt(peak.lps)}<span style="font-size:14px"> logs/s peak</span></div><div class="muted">at ${peak.conc} connections × ${peak.batch} per request · p95 ${peak.p95?.toFixed(0)} ms${sat > 0 ? ` · gains flatten from stage ${sat+1}` : ' · still scaling at the last stage'}</div></div><p style="margin:8px 0 0"><b>Limiting factor:</b> ${why}</p>`;
+}
+
 /* ---------- charts ---------- */
 function setup(canvas){
-  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = +canvas.getAttribute('height');
-  canvas.width = w*dpr; canvas.height = h*dpr;
+  // Logical height lives in data-h. Reading the `height` attribute here would feed back on
+  // itself (we overwrite it below) and grow the canvas by dpr on every redraw until it dies.
+  if(!canvas.dataset.h) canvas.dataset.h = canvas.getAttribute('height');
+  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = +canvas.dataset.h;
+  canvas.style.height = h + 'px';
+  canvas.width = Math.round(w*dpr); canvas.height = Math.round(h*dpr);
   const ctx = canvas.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
   return {ctx, w, h};
 }

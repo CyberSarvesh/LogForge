@@ -1,5 +1,6 @@
 import express from "express";
 import logsRoutes from "../modules/logs/log.routes.js";
+import { snapshot } from "../middlewares/metrics.middleware.js";
 import { ping } from "../modules/logs/log.repository.js";
 
 const router = express.Router();
@@ -13,6 +14,8 @@ router.get("/health", async (req, res) => {
     res.status(503).json({ status: "degraded", db: "down" });
   }
 });
+
+router.get("/metrics", (req, res) => res.json(snapshot()));
 
 router.use("/logs", logsRoutes);
 
