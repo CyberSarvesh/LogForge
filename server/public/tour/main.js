@@ -13,7 +13,9 @@ import system from "./chapters/system.js";
 
 const CHAPTERS = [journey, batch, race, search, chaos, limits, system];
 const NO_3D = "The 3D view needs WebGL2, which this browser has turned off. All the controls and measurements still work.";
+const LOST_3D = "The browser paused the 3D view because the graphics driver reset. If it doesn't come back in a few seconds, reload the page.";
 const NARROW = 760;
+const MIN_VIEWPORT = 160;
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("world");
@@ -22,6 +24,7 @@ const camera = createCamera();
 const labels = createLabels($("labels"), camera.project);
 
 let renderer = null;
+let problem = ""; // why there is no 3D view, if there isn't one
 let pixelRatio = Math.min(devicePixelRatio || 1, 1.75);
 let layout;
 let active = null;
@@ -33,6 +36,7 @@ function initRenderer() {
     console.error(err);
     renderer = null;
   }
+  problem = renderer ? "" : NO_3D;
 }
 
 function measure() {
@@ -65,7 +69,7 @@ function createContext(root, controller) {
   const { signal } = controller;
   const find = (id) => root.querySelector(`#${id}`);
   const notice = (text) => {
-    if (!signal.aborted) $("notice").textContent = text || (renderer ? "" : NO_3D);
+    if (!signal.aborted) $("notice").textContent = text || problem;
   };
   return {
     signal,
@@ -103,7 +107,7 @@ function go(requested, { focus = false } = {}) {
   $("step").textContent = `${index + 1} of ${CHAPTERS.length}`;
   $("title").textContent = chapter.title;
   $("lead").textContent = chapter.lead;
-  $("notice").textContent = renderer ? "" : NO_3D;
+  $("notice").textContent = problem;
   $("story").scrollTop = 0;
   $("prev").disabled = index === 0;
   $("next").disabled = index === CHAPTERS.length - 1;
@@ -135,6 +139,11 @@ function frame(time) {
   const elapsed = Math.max(0, time - previousFrame);
   previousFrame = time;
   const now = tick();
+
+  if (innerWidth !== layout.width || innerHeight !== layout.height) measure();
+  // Hidden and still-opening panes report a size of zero or a few pixels. Framing the scene for that
+  // puts NaN or huge offsets into the camera, which eases from its previous pose and so stays blank.
+  if (layout.width < MIN_VIEWPORT || layout.height < MIN_VIEWPORT) return;
 
   // Weak GPU: trade resolution for frame rate. Gaps over 100 ms are a throttled tab, not a slow GPU.
   slowFrames = elapsed > 40 && elapsed < 100 ? slowFrames + 1 : Math.max(0, slowFrames - 1);
@@ -182,8 +191,13 @@ canvas.addEventListener("pointerleave", () => active.scene.pointer?.(null));
 canvas.addEventListener("webglcontextlost", (event) => {
   event.preventDefault();
   renderer = null;
+  problem = LOST_3D;
+  $("notice").textContent = problem;
 });
-canvas.addEventListener("webglcontextrestored", initRenderer);
+canvas.addEventListener("webglcontextrestored", () => {
+  initRenderer();
+  $("notice").textContent = problem;
+});
 
 initRenderer();
 measure();
