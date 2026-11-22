@@ -1,5 +1,6 @@
 import express from "express";
 import logsRoutes from "../modules/logs/log.routes.js";
+import demoRoutes from "../modules/demo/demo.routes.js";
 import { snapshot } from "../middlewares/metrics.middleware.js";
 import { ping } from "../modules/logs/log.repository.js";
 
@@ -18,5 +19,6 @@ router.get("/health", async (req, res) => {
 router.get("/metrics", (req, res) => res.json(snapshot()));
 
 router.use("/logs", logsRoutes);
+router.use("/demo", demoRoutes);
 
 export default router;

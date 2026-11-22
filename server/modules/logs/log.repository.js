@@ -1,7 +1,7 @@
-import { pool } from "../../db/client.js";
+import { query } from "../../db/client.js";
 
 export const insertLog = async (log) => {
-  const result = await pool.query(
+  const result = await query(
     `INSERT INTO logs (service, level, message, metadata)
      VALUES ($1, $2, $3, $4)
      RETURNING *`,
@@ -12,7 +12,7 @@ export const insertLog = async (log) => {
 
 // One round trip and one statement for the whole batch.
 export const insertLogs = async (logs) => {
-  const result = await pool.query(
+  const result = await query(
     `INSERT INTO logs (service, level, message, metadata)
      SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::jsonb[])
      RETURNING *`,
@@ -56,13 +56,13 @@ export const fetchLogs = async ({ service, level, search, before, limit }) => {
     ORDER BY id DESC
     LIMIT $${values.length}`;
 
-  const result = await pool.query(sql, values);
+  const result = await query(sql, values);
   return result.rows;
 };
 
 export const fetchStats = async ({ windowSecs, bucketSecs }) => {
   const [series, services, total] = await Promise.all([
-    pool.query(
+    query(
       `SELECT date_bin(make_interval(secs => $2), timestamp, TIMESTAMPTZ '2000-01-01') AS t,
               level, count(*)::int AS n
        FROM logs
@@ -71,7 +71,7 @@ export const fetchStats = async ({ windowSecs, bucketSecs }) => {
        ORDER BY 1`,
       [windowSecs, bucketSecs]
     ),
-    pool.query(
+    query(
       `SELECT service, count(*)::int AS n
        FROM logs
        WHERE timestamp > now() - make_interval(secs => $1)
@@ -81,7 +81,7 @@ export const fetchStats = async ({ windowSecs, bucketSecs }) => {
       [windowSecs]
     ),
     // Planner estimate: instant even on huge tables, unlike count(*).
-    pool.query(
+    query(
       `SELECT GREATEST(reltuples, 0)::bigint AS n FROM pg_class WHERE oid = 'logs'::regclass`
     ),
   ]);
@@ -89,7 +89,7 @@ export const fetchStats = async ({ windowSecs, bucketSecs }) => {
   let totalRows = Number(total.rows[0]?.n ?? 0);
   if (totalRows < 50000) {
     // Estimate is stale on small/new tables; an exact count is cheap here.
-    totalRows = Number((await pool.query("SELECT count(*) AS n FROM logs")).rows[0].n);
+    totalRows = Number((await query("SELECT count(*) AS n FROM logs")).rows[0].n);
   }
 
   return {
@@ -100,5 +100,5 @@ export const fetchStats = async ({ windowSecs, bucketSecs }) => {
 };
 
 export const ping = async () => {
-  await pool.query("SELECT 1");
+  await query("SELECT 1");
 };

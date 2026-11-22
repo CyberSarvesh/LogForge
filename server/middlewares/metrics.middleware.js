@@ -1,5 +1,6 @@
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { pool } from "../db/client.js";
+import { pool, gate, takeDbStats } from "../db/client.js";
+import { demo } from "../config/env.js";
 
 const loop = monitorEventLoopDelay({ resolution: 10 });
 loop.enable();
@@ -39,13 +40,15 @@ export const snapshot = () => {
     loopLagP99Ms: Math.round((loop.percentile(99) / 1e6) * 10) / 10,
     loopLagMaxMs: Math.round((loop.max / 1e6) * 10) / 10,
     inflight,
+    // "pool" is the concurrency gate in front of the real pg pool (see db/client.js).
     pool: {
-      max: pool.options.max,
-      total: pool.totalCount,
-      idle: pool.idleCount,
-      busy: pool.totalCount - pool.idleCount,
-      waiting: pool.waitingCount,
+      max: gate.limit,
+      capacity: pool.options.max,
+      busy: gate.active,
+      waiting: gate.waiting,
+      queueMax: demo.queueMax,
     },
+    db: takeDbStats(),
     heapMb: Math.round(mem.heapUsed / 1048576),
     rssMb: Math.round(mem.rss / 1048576),
     requests: { ...counts },
