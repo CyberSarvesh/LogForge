@@ -1,5 +1,9 @@
 # LogForge
 
+**[▶ Open the live 3D tour](https://logforge-lbtm.onrender.com)** · [live console](https://logforge-lbtm.onrender.com/console.html)
+
+<sub>Free hosting, so the first visit can take about a minute to wake up.</sub>
+
 Centralized logging for distributed services: an ingest API, fast search, a live tail, and the observability to show where it breaks.
 
 **Stack:** Node 22, Express 5, PostgreSQL (`pg`), vanilla JS front end, no build step.
