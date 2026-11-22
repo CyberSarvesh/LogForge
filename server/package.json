@@ -2,9 +2,11 @@
   "name": "server",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "db:setup": "node db/setup.js"
   },
   "keywords": [],
   "author": "",
@@ -12,8 +14,9 @@
   "type": "module",
   "dependencies": {
     "cors": "^2.8.6",
-    "env": "^0.0.2",
+    "dotenv": "^18.0.10",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.3.1"
+    "express-rate-limit": "^8.3.1",
+    "pg": "^8.23.1"
   }
 }

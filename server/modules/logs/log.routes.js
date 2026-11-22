@@ -1,7 +1,18 @@
-import express from 'express';
-import rateLimitMiddleware from '../../middlewares/rateLimit.middleware.js';
-
+import express from "express";
+import {
+  createLog,
+  createLogsBatch,
+  getLogs,
+  getStats,
+  streamLogs,
+} from "./log.controller.js";
 
 const router = express.Router();
-router.post("/", rateLimitMiddleware, createLog);
-router.get("/", rateLimitMiddleware, getLogs);
+
+router.post("/", createLog);
+router.post("/batch", createLogsBatch);
+router.get("/", getLogs);
+router.get("/stats", getStats);
+router.get("/stream", streamLogs);
+
+export default router;
