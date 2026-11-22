@@ -30,15 +30,23 @@ const STATS_TTL_MS = 1000;
 const statsCache = new Map();
 
 export const getStatsService = async (query) => {
-  const windowSecs = Math.min(Math.max(Number(query.window) || 300, 10), 86400);
-  const bucketSecs = Math.min(Math.max(Number(query.bucket) || 5, 1), 3600);
+  const windowSecs = Math.min(Math.max(Math.trunc(Number(query.window)) || 300, 10), 86400);
+  // At most 600 buckets, so nobody can ask for 86,400 one-second buckets.
+  const bucketSecs = Math.min(
+    Math.max(Math.trunc(Number(query.bucket)) || 5, Math.ceil(windowSecs / 600)),
+    3600
+  );
   const key = `${windowSecs}:${bucketSecs}`;
 
   const hit = statsCache.get(key);
   if (hit && Date.now() - hit.at < STATS_TTL_MS) return hit.promise;
+  // Callers choose the key, so drop expired entries or the map grows forever.
+  for (const [k, entry] of statsCache) if (Date.now() - entry.at >= STATS_TTL_MS) statsCache.delete(k);
 
   const promise = fetchStats({ windowSecs, bucketSecs }).then((s) => ({ windowSecs, bucketSecs, ...s }));
   statsCache.set(key, { at: Date.now(), promise });
-  promise.catch(() => statsCache.delete(key));
+  promise.catch(() => {
+    if (statsCache.get(key)?.promise === promise) statsCache.delete(key);
+  });
   return promise;
 };

@@ -12,8 +12,8 @@ const router = express.Router();
 
 router.post("/", backpressure, createLog);
 router.post("/batch", backpressure, createLogsBatch);
-router.get("/", getLogs);
-router.get("/stats", getStats);
+router.get("/", backpressure, getLogs);
+router.get("/stats", backpressure, getStats);
 router.get("/stream", streamLogs);
 
 export default router;

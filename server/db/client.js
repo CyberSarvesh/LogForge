@@ -1,12 +1,20 @@
 import pkg from "pg";
-import { DATABASE_URL, DB_POOL_MAX, demo } from "../config/env.js";
+import { DATABASE_URL, DB_POOL_MAX, PUBLIC_DEMO, demo } from "../config/env.js";
 
 const { Pool } = pkg;
 
 export const pool = new Pool({
   connectionString: DATABASE_URL,
   max: DB_POOL_MAX,
+  connectionTimeoutMillis: 10000,
+  // Strangers shouldn't be able to park queries on a tiny database.
+  ...(PUBLIC_DEMO && { statement_timeout: 15000 }),
 });
+
+// When Postgres restarts it errors every open connection. Without listeners, for idle clients and
+// for checked-out ones, that is an uncaught 'error' event and takes the process down.
+pool.on("error", (err) => console.error("Postgres connection lost:", err.message));
+pool.on("connect", (client) => client.on("error", () => {}));
 
 // ---- Concurrency gate (bulkhead) ------------------------------------------------
 // Caps how many queries run against Postgres at once and exposes the wait queue.

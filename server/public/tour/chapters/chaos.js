@@ -2,6 +2,7 @@ import { request, errorText, startLoad, watchMetrics, SENDERS } from "../lib/api
 import { COLOR, plate, arch, service, database, cage, gridSlot, pulse } from "../lib/props.js";
 import { clamp, ease, mix } from "../engine/math.js";
 import { formatCount, formatMs, percentile, stat } from "../lib/util.js";
+import { createSimulatedServer, SIMULATED_DEFAULTS } from "../lib/simulatedServer.js";
 
 const BATCH = 100;
 const WINDOW_MS = 3000;
@@ -37,6 +38,7 @@ export default {
   title: "Break it on purpose",
   lead: "Four services flood the server. Every crate is 100 logs. Sabotage the database and watch the queue form. When it is full the server refuses new work at once, so it never collapses.",
   panel: `
+    <p class="simulated" id="simulated" hidden><b>Simulation.</b> This chapter runs the same queue rules in your browser, so you can't break the site for everyone else. The other chapters are real. Run LogForge on localhost to sabotage a real server.</p>
     <div id="controls">
       <div class="actions">
         <button type="button" class="primary" id="flood">Start flood</button>
@@ -53,7 +55,7 @@ export default {
     </div>
     <p id="caption" aria-live="polite">Start the flood, or pick a way to break it.</p>
     <div class="stats">${stat("rate", "logs / sec")}${stat("latencyP95", "p95 latency")}${stat("refused", "refused (503)", "0")}</div>
-    <p class="note">These are real server settings. They reset when you leave this chapter.</p>`,
+    <p class="note" id="settingsNote">These are real server settings. They reset when you leave this chapter.</p>`,
 
   mount(ctx) {
     let config = null;
@@ -62,6 +64,7 @@ export default {
     let load = null;
     let stopWatching = null;
     let changed = false;
+    let simulated = null;
     let refused = 0;
     let recent = [];
     let flights = [];
@@ -76,9 +79,10 @@ export default {
     }
 
     function configure(patch) {
-      changed = true;
       config = { ...config, ...patch };
       showConfig();
+      if (simulated) return simulated.configure(config);
+      changed = true;
       const { poolLimit, dbLatencyMs, queueMax } = config;
       writes = writes.then(async () => {
         if (ctx.signal.aborted) return;
@@ -107,11 +111,12 @@ export default {
       refused = 0;
       recent = [];
       setFlooding(true);
-      stopWatching = watchMetrics({ signal: ctx.signal, everyMs: 150, onSample: (m) => (metrics = m) });
+      stopWatching = watchMetrics({ signal: ctx.signal, everyMs: 150, read: simulated?.readMetrics, onSample: (m) => (metrics = m) });
       load = startLoad({
         senders: SENDERS,
         batch: BATCH,
         signal: ctx.signal,
+        send: simulated?.send,
         onResult(res, sender) {
           const now = ctx.now();
           sentAt[sender] = now;
@@ -163,11 +168,15 @@ export default {
       await resetting;
       const res = await request("GET", "/demo/config", undefined, ctx.signal);
       if (ctx.signal.aborted) return;
-      if (res.status !== 200) {
+      if (res.status === 403 || res.status === 404) {
+        simulated = createSimulatedServer();
+        ctx.$("simulated").hidden = false;
+        ctx.$("settingsNote").hidden = true;
+      } else if (res.status !== 200) {
         ctx.$("caption").textContent = "The controls for this chapter are unavailable.";
         return ctx.notice(errorText(res));
       }
-      config = res.data;
+      config = simulated ? { ...SIMULATED_DEFAULTS } : res.data;
       defaults = { poolLimit: config.poolCapacity, dbLatencyMs: 0, queueMax: config.queueMaxDefault };
       ctx.$("gate").max = config.poolCapacity;
       ctx.$("queue").max = Math.max(50, config.queueMaxDefault);
@@ -249,6 +258,7 @@ export default {
           }
         }
 
+        if (simulated) g.label("simulation", [0, 0.5, 8], "Simulation", "warn");
         database(g, DB, { flash: landed });
         g.label("db", [DB[0], 6.1, 0], `Postgres<small>${config?.dbLatencyMs ? `+${config.dbLatencyMs} ms delay` : "full speed"}</small>`);
       },

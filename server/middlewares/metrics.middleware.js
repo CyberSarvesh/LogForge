@@ -1,6 +1,6 @@
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { pool, gate, takeDbStats } from "../db/client.js";
-import { demo } from "../config/env.js";
+import { demo, CPU_LIMIT } from "../config/env.js";
 
 const loop = monitorEventLoopDelay({ resolution: 10 });
 loop.enable();
@@ -30,7 +30,7 @@ export const metricsMiddleware = (req, res, next) => {
 export const snapshot = () => {
   const now = performance.now();
   const cpu = process.cpuUsage(lastCpu);
-  const cpuPct = ((cpu.user + cpu.system) / ((now - lastT) * 1000)) * 100;
+  const cpuPct = ((cpu.user + cpu.system) / ((now - lastT) * 1000 * CPU_LIMIT)) * 100;
   lastCpu = process.cpuUsage();
   lastT = now;
 

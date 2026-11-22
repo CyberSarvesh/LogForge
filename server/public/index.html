@@ -491,8 +491,12 @@ function lineHtml(r, hl){
 function attachExpand(root){
   root.onclick = (e) => {
     const el = e.target.closest('.logline'); if(!el) return;
-    if(el.classList.toggle('exp')){ el.querySelector('.m').insertAdjacentHTML('beforeend', `\n<span class="muted">${el.dataset.meta}</span>`); }
-    else el.querySelector('.m').innerHTML = el.querySelector('.m').innerHTML.split('\n')[0];
+    if(el.classList.toggle('exp')){
+      // Metadata comes from whoever sent the log: only ever insert it as text.
+      const meta = document.createElement('span');
+      meta.className = 'muted meta'; meta.textContent = '\n' + el.dataset.meta;
+      el.querySelector('.m').append(meta);
+    } else el.querySelector('.meta')?.remove();
   };
 }
 attachExpand($('tail')); attachExpand($('results'));

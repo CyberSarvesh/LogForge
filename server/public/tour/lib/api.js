@@ -56,18 +56,21 @@ export async function request(method, path, body, signal) {
 export const errorText = ({ status, data }) =>
   `${status ? `HTTP ${status}: ` : ""}${data?.error || "Request failed"}`;
 
+const sendBatch = (batch, signal) => request("POST", "/logs/batch", generateLogs(batch), signal);
+const readServerMetrics = (signal) => request("GET", "/metrics", undefined, signal);
+
 /**
  * Sends batches from `senders` parallel loops until stopped. Honours Retry-After.
  * `onResult` sees every response, so nothing on screen has to be sampled.
  */
-export function startLoad({ senders, batch, signal, durationMs = Infinity, onResult }) {
+export function startLoad({ senders, batch, signal, durationMs = Infinity, onResult, send = sendBatch }) {
   const start = performance.now();
   let stopped = false;
   const running = () => !stopped && !signal.aborted && performance.now() - start < durationMs;
 
   const sendLoop = async (sender) => {
     while (running()) {
-      const res = await request("POST", "/logs/batch", generateLogs(batch), signal);
+      const res = await send(batch, signal);
       if (signal.aborted) return;
       onResult(res, sender);
       if (res.status === 201) continue;
@@ -85,11 +88,11 @@ export function startLoad({ senders, batch, signal, durationMs = Infinity, onRes
 }
 
 /** Polls /api/metrics one request at a time, so polling never takes a second connection. */
-export function watchMetrics({ signal, everyMs, onSample }) {
+export function watchMetrics({ signal, everyMs, onSample, read = readServerMetrics }) {
   let stopped = false;
   (async () => {
     while (!stopped && !signal.aborted) {
-      const res = await request("GET", "/metrics", undefined, signal);
+      const res = await read(signal);
       if (!stopped && !signal.aborted && res.status === 200) onSample(res.data);
       await sleep(everyMs);
     }

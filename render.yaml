@@ -1,0 +1,53 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# In the Render dashboard: New > Blueprint, pick this repository, then Deploy Blueprint.
+# `plan: free` is explicit on both resources because Render defaults to paid plans without it.
+
+databases:
+  - name: logforge-db
+    plan: free # 1 GB, one per workspace, expires 30 days after creation
+    region: singapore # must match the web service to use the private network
+    postgresMajorVersion: "17" # what docker-compose uses locally
+    databaseName: logforge
+    ipAllowList: [] # no connections from the internet
+
+services:
+  - type: web
+    name: logforge
+    runtime: node
+    plan: free # sleeps after 15 minutes idle, takes about a minute to wake
+    region: singapore
+    rootDir: server
+    buildCommand: npm ci --omit=dev
+    # Free services have no pre-deploy step, so the idempotent schema runs on start.
+    # exec lets Node receive Render's SIGTERM and shut down cleanly.
+    startCommand: node db/setup.js && exec node server.js
+    # Doesn't touch Postgres: a database restart should not restart the web service too.
+    healthCheckPath: /api/live
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22.23.4"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: logforge-db
+          property: connectionString
+      # Safe settings for a site anyone can write to. See "Deploy to Render" in README.md.
+      - key: PUBLIC_DEMO
+        value: "true"
+      # WARNING: the logs are disposable. The table skips the write-ahead log (emptied if Postgres
+      # crashes) and is wiped back to sample data at this size. Remove this for real logs.
+      - key: DEMO_RESET_AT_MB
+        value: "200"
+      # Requests per minute per visitor IP. One batching race is about 500.
+      - key: RATE_LIMIT_MAX
+        value: "3000"
+      # Sized for 0.1 CPU and a 256 MB database.
+      - key: DB_POOL_MAX
+        value: "8"
+      - key: DB_QUEUE_MAX
+        value: "40"
+      # Lets the CPU gauge and the tour's bottleneck verdict read 100% at the free plan's real ceiling.
+      - key: CPU_LIMIT
+        value: "0.1"

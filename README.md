@@ -18,6 +18,37 @@ npm start                            # http://localhost:3100
 - `/` is the live console: load generator, benchmark, live tail, search, server vitals.
 - `/tour.html` is a **guided 3D tour** in seven chapters, where every log is a cube you can count and inspect and every timing is measured on your server. Start there. It needs WebGL2 for the visuals; without it the controls and measurements still work.
 
+## Deploy to Render
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/CyberSarvesh/LogForge)
+
+[`render.yaml`](render.yaml) creates a free web service and a free Postgres, connects them and creates the schema.
+
+1. Push to `main`. Render reads the repository, not your working copy.
+2. In the [Render dashboard](https://dashboard.render.com), choose **New > Blueprint** and connect the repository.
+3. Check that both resources say **Free**, then click **Deploy Blueprint**.
+4. Open `https://<your-service>.onrender.com/tour.html`. Sample data appears shortly after the first start.
+
+What the free plan means:
+
+- **The database expires 30 days after creation.** Render deletes it 14 days later unless you upgrade. To start over, delete it and sync the Blueprint again.
+- **One free database per workspace.** If you already have one, the Blueprint can't create another.
+- **The service sleeps after 15 idle minutes** and takes about a minute to wake. Open it before you present.
+- **It is small** (0.1 CPU, 512 MB), so expect far lower numbers than on a laptop.
+
+The Blueprint sets `PUBLIC_DEMO=true`, because anyone can reach the site:
+
+| | Localhost | Public demo |
+|---|---|---|
+| "Break it" chapter | sabotages the real server | labelled simulation in the visitor's browser |
+| Search race | unlimited | read-only, one at a time, 20/min per IP |
+| Demo config and reset API | local same-origin only | off |
+| Request bodies | 5 MB | 512 KB, uncompressed |
+| Live tails | unlimited | 300 in total, 40 per IP |
+| Data | yours | **disposable**: an unlogged table, wiped back to samples at 200 MB (`DEMO_RESET_AT_MB`) |
+
+Ingest has no authentication, so visitors can write any text into a public demo's logs. Don't send real logs to one. For real use, remove `PUBLIC_DEMO` and `DEMO_RESET_AT_MB` and add authentication first.
+
 ## Architecture
 
 ```mermaid
@@ -57,7 +88,8 @@ server/
 | GET | `/api/logs/stats` | Per-level time series and top services |
 | GET | `/api/logs/stream` | Live tail over Server-Sent Events |
 | GET | `/api/metrics` | CPU, event-loop lag, in-flight, gate usage, per-query timings, outcome counts |
-| GET | `/api/health` | Liveness plus DB round-trip time |
+| GET | `/api/health` | Readiness: DB round-trip time |
+| GET | `/api/live` | Liveness for the host, doesn't touch the DB |
 
 ## Design decisions
 
@@ -70,7 +102,7 @@ server/
 - **Single-flight stats cache.** Dashboard aggregates share one query per second so reads don't compete with writes.
 - **Observability built in.** Event-loop lag, gate saturation, and queue-wait vs query time are first-class metrics, and the UI uses them to name the bottleneck.
 - **Safe by default.** Demo endpoints (which can slow the DB on purpose) are off in production unless `ENABLE_DEMO=true`. Where they are on, `/api/demo/*` only answers same-origin requests from the machine running the server (`middlewares/localOnly.middleware.js`), so other websites, LAN devices and proxied callers get `403`. Log ingest still accepts any origin.
-  - To use the tour's "Break it" and search chapters, open it at `localhost`, `127.0.0.1` or `[::1]`. They won't work through a LAN IP, a tunnel or a Docker port mapping.
+  - To use the tour's "Break it" and search chapters, open it at `localhost`, `127.0.0.1` or `[::1]`. Through a LAN IP, a tunnel or a Docker port mapping, "Break it" runs as a simulation and the search race is refused.
 
 ## Measured results (one dev machine, your numbers will differ)
 

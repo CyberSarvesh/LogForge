@@ -76,6 +76,7 @@ button:disabled { opacity: .4; cursor: default; }
 .stat span { color: var(--muted); font-size: 12px; }
 .note { color: var(--muted); font-size: 12.5px; }
 code, pre { font: 12px/1.55 var(--mono); }
+.simulated { padding: 8px 11px; border-radius: 5px; background: var(--raised); color: var(--warn); font-size: 12.5px; }
 pre { margin: 8px 0; max-height: 190px; overflow: auto; padding: 10px 12px; border-radius: 5px; background: var(--raised); white-space: pre-wrap; word-break: break-word; }
 .field { display: block; margin-bottom: 10px; color: var(--muted); font-size: 12px; }
 .field input { display: block; width: 100%; margin-top: 4px; padding: 9px 11px; border: 1px solid #3a4548; border-radius: 5px; background: var(--raised); color: var(--text); font: 14px var(--mono); }
