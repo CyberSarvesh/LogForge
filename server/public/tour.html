@@ -2,40 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
 <title>LogForge Guided Tour</title>
-<link rel="icon" href="data:,">
-<link rel="stylesheet" href="/tour/tour.css">
-<script type="module" src="/tour/main.js"></script>
+<!-- The tour moved to the homepage. Old links keep their chapter (#act3). -->
+<script>location.replace("/" + location.search + location.hash);</script>
+<noscript><meta http-equiv="refresh" content="0; url=/"></noscript>
+<link rel="canonical" href="/">
 </head>
-<body>
-  <canvas id="world" aria-hidden="true"></canvas>
-  <div class="scrim" aria-hidden="true"></div>
-  <div id="labels" aria-hidden="true"></div>
-
-  <header>
-    <a class="logo" href="/">LOG<b>FORGE</b></a>
-    <nav id="chapters" aria-label="Chapters"></nav>
-    <label class="slow"><input type="checkbox" id="slow"> Slow motion</label>
-    <a class="console" href="/">Console ↗</a>
-  </header>
-
-  <main id="story">
-    <div id="step" class="step"></div>
-    <h1 id="title" tabindex="-1"></h1>
-    <p id="lead"></p>
-    <div id="panel"></div>
-    <p id="notice" role="status"></p>
-    <div class="turn">
-      <button type="button" id="prev">← Back</button>
-      <button type="button" id="next">Next →</button>
-    </div>
-  </main>
-
-  <footer>
-    <div class="legend" aria-label="Log levels"><i class="info"></i>info <i class="warn"></i>warn <i class="error"></i>error</div>
-    <div class="tail"><span id="tailState">connecting</span><span id="tailLine">Stored logs appear here live.</span></div>
-  </footer>
-</body>
+<body><a href="/">Continue to the guided tour</a></body>
 </html>

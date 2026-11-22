@@ -15,8 +15,8 @@ npm run db:setup                     # creates the table and indexes
 npm start                            # http://localhost:3100
 ```
 
-- `/` is the live console: load generator, benchmark, live tail, search, server vitals.
-- `/tour.html` is a **guided 3D tour** in seven chapters, where every log is a cube you can count and inspect and every timing is measured on your server. Start there. It needs WebGL2 for the visuals; without it the controls and measurements still work.
+- `/` is a **guided 3D tour** in seven chapters, where every log is a cube you can count and inspect and every timing is measured on your server. Start there. It needs WebGL2 for the visuals; without it the controls and measurements still work.
+- `/console.html` is the live console: load generator, benchmark, live tail, search, server vitals.
 
 ## Deploy to Render
 
@@ -27,7 +27,7 @@ npm start                            # http://localhost:3100
 1. Push to `main`. Render reads the repository, not your working copy.
 2. In the [Render dashboard](https://dashboard.render.com), choose **New > Blueprint** and connect the repository.
 3. Check that both resources say **Free**, then click **Deploy Blueprint**.
-4. Open `https://<your-service>.onrender.com/tour.html`. Sample data appears shortly after the first start.
+4. Open `https://<your-service>.onrender.com`. Sample data appears shortly after the first start.
 
 What the free plan means:
 
@@ -71,7 +71,7 @@ server/
   modules/logs/   routes → controller → service → repository (+ schema validation, SSE hub)
   modules/demo/   dev-only chaos controls and EXPLAIN race (ENABLE_DEMO)
   db/             pool + concurrency gate, schema.sql, setup script
-  public/         console (index.html) and guided tour (tour.html)
+  public/         guided tour (index.html) and console (console.html)
     tour/
       engine/     dependency-free WebGL2 renderer: instancing, shadows, camera
       lib/        API client, 3D props, labels, live tail
