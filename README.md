@@ -16,7 +16,7 @@ npm start                            # http://localhost:3100
 ```
 
 - `/` is the live console: load generator, benchmark, live tail, search, server vitals.
-- `/tour.html` is a **guided, narrated tour** with an animated request pipeline driven by real measurements. Start there.
+- `/tour.html` is a **guided 3D tour** in seven chapters, where every log is a cube you can count and inspect and every timing is measured on your server. Start there. It needs WebGL2 for the visuals; without it the controls and measurements still work.
 
 ## Architecture
 
@@ -41,6 +41,10 @@ server/
   modules/demo/   dev-only chaos controls and EXPLAIN race (ENABLE_DEMO)
   db/             pool + concurrency gate, schema.sql, setup script
   public/         console (index.html) and guided tour (tour.html)
+    tour/
+      engine/     dependency-free WebGL2 renderer: instancing, shadows, camera
+      lib/        API client, 3D props, labels, live tail
+      chapters/   one file per chapter
 ```
 
 ## API
@@ -65,7 +69,8 @@ server/
 - **SSE with coalescing.** Bursts are buffered and flushed four times a second, so a 20k logs/s flood can't swamp browsers.
 - **Single-flight stats cache.** Dashboard aggregates share one query per second so reads don't compete with writes.
 - **Observability built in.** Event-loop lag, gate saturation, and queue-wait vs query time are first-class metrics, and the UI uses them to name the bottleneck.
-- **Safe by default.** Demo endpoints (which can slow the DB on purpose) are off in production unless `ENABLE_DEMO=true`.
+- **Safe by default.** Demo endpoints (which can slow the DB on purpose) are off in production unless `ENABLE_DEMO=true`. Where they are on, `/api/demo/*` only answers same-origin requests from the machine running the server (`middlewares/localOnly.middleware.js`), so other websites, LAN devices and proxied callers get `403`. Log ingest still accepts any origin.
+  - To use the tour's "Break it" and search chapters, open it at `localhost`, `127.0.0.1` or `[::1]`. They won't work through a LAN IP, a tunnel or a Docker port mapping.
 
 ## Measured results (one dev machine, your numbers will differ)
 

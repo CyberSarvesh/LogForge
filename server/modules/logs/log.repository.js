@@ -26,7 +26,7 @@ export const insertLogs = async (logs) => {
   return result.rows;
 };
 
-const escapeLike = (s) => s.replace(/[\\%_]/g, "\\$&");
+export const escapeLike = (s) => s.replace(/[\\%_]/g, "\\$&");
 
 export const fetchLogs = async ({ service, level, search, before, limit }) => {
   const values = [];

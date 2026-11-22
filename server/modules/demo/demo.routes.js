@@ -1,7 +1,9 @@
 import express from "express";
 import { pool, gate } from "../../db/client.js";
 import { demo, DB_POOL_MAX, DB_QUEUE_MAX, ENABLE_DEMO } from "../../config/env.js";
-import { ValidationError } from "../logs/log.schema.js";
+import { ValidationError, rejectNul } from "../logs/log.schema.js";
+import { escapeLike } from "../logs/log.repository.js";
+import localOnly from "../../middlewares/localOnly.middleware.js";
 
 const router = express.Router();
 
@@ -10,6 +12,8 @@ router.use((_req, res, next) => {
   if (!ENABLE_DEMO) return res.status(404).json({ error: "Demo endpoints are disabled" });
   next();
 });
+// The app allows any origin so that services can ingest. That must not extend to these.
+router.use(localOnly);
 
 const config = () => ({
   poolLimit: gate.limit,
@@ -54,7 +58,19 @@ const planNodes = (node, out = []) => {
   return out;
 };
 
-const escapeLike = (s) => s.replace(/[\%_]/g, "\$&");
+// Which of `count` equal slices of the id range hold matches, as [index, matches] pairs.
+const matchBlocks = async (client, pattern, count) => {
+  const [{ lo, hi }] = (await client.query("SELECT min(id) AS lo, max(id) AS hi FROM logs")).rows;
+  if (lo === null) return [];
+  const { rows } = await client.query(
+    `SELECT width_bucket(id::float8, $2::float8, $3::float8 + 1, $4::int) - 1 AS block, count(*)::int AS n
+     FROM logs
+     WHERE message ILIKE $1 AND id <= $3::bigint
+     GROUP BY 1`,
+    [pattern, lo, hi, count]
+  );
+  return rows.map((r) => [r.block, r.n]);
+};
 
 /**
  * Race the same search with and without the trigram index. Each plan runs inside a
@@ -63,8 +79,11 @@ const escapeLike = (s) => s.replace(/[\%_]/g, "\$&");
  * the sequential-scan plan.
  */
 router.get("/explain", async (req, res, next) => {
-  const term = String(req.query.search || "").slice(0, 100);
+  const search = String(req.query.search || "");
+  rejectNul(search, "search");
+  const term = search.slice(0, 100);
   if (term.length < 3) return next(new ValidationError("search must be at least 3 characters"));
+  const blockCount = intIn(req.query.blocks ?? 400, 1, 1000, "blocks");
 
   const client = await pool.connect();
   try {
@@ -93,7 +112,9 @@ router.get("/explain", async (req, res, next) => {
       await client.query("SELECT GREATEST(reltuples, 0)::bigint AS n FROM pg_class WHERE oid = 'logs'::regclass")
     ).rows;
 
-    res.json({ term, matches, tableRows: Number(rows), scan, indexed });
+    const blocks = await matchBlocks(client, param[0], blockCount);
+
+    res.json({ term, matches, tableRows: Number(rows), scan, indexed, blocks });
   } catch (err) {
     next(err);
   } finally {

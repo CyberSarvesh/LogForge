@@ -1,5 +1,6 @@
 export const LEVELS = ["info", "warn", "error"];
 export const MAX_BATCH = 1000;
+const MAX_ID = 2n ** 63n - 1n; // logs.id is BIGSERIAL. A BigInt, because Number would round it.
 
 export class ValidationError extends Error {
   constructor(message) {
@@ -8,6 +9,31 @@ export class ValidationError extends Error {
     this.status = 400;
   }
 }
+
+// Postgres cannot store or compare U+0000 in text or jsonb.
+const NUL = String.fromCharCode(0);
+
+export const rejectNul = (text, field) => {
+  if (text.includes(NUL)) throw new ValidationError(`${field} must not contain NUL characters`);
+};
+
+// Checks keys and values at every depth. A loop, because recursion would overflow on deeply nested input.
+const rejectNulInJson = (root, field) => {
+  const pending = [root];
+  while (pending.length) {
+    const value = pending.pop();
+    if (typeof value === "string") {
+      rejectNul(value, field);
+    } else if (Array.isArray(value)) {
+      for (const item of value) pending.push(item);
+    } else if (typeof value === "object" && value !== null) {
+      for (const key in value) {
+        rejectNul(key, field);
+        pending.push(value[key]);
+      }
+    }
+  }
+};
 
 export const validateLog = (data) => {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
@@ -31,6 +57,9 @@ export const validateLog = (data) => {
   ) {
     throw new ValidationError("metadata must be a JSON object");
   }
+  rejectNul(data.service, "service");
+  rejectNul(data.message, "message");
+  if (data.metadata) rejectNulInJson(data.metadata, "metadata");
 };
 
 export const validateBatch = (logs) => {
@@ -51,8 +80,11 @@ export const validateBatch = (logs) => {
 
 export const parseQuery = (query) => {
   const out = {};
-  if (query.service) out.service = String(query.service);
-  if (query.search) out.search = String(query.search);
+  for (const field of ["service", "search"]) {
+    if (!query[field]) continue;
+    out[field] = String(query[field]);
+    rejectNul(out[field], field);
+  }
   if (query.level) {
     if (!LEVELS.includes(query.level)) {
       throw new ValidationError(`Invalid level. Use one of: ${LEVELS.join(", ")}`);
@@ -60,8 +92,9 @@ export const parseQuery = (query) => {
     out.level = query.level;
   }
   if (query.before !== undefined) {
-    if (!/^\d+$/.test(String(query.before))) throw new ValidationError("before must be a log id");
-    out.before = String(query.before);
+    const before = String(query.before);
+    if (!/^\d+$/.test(before) || BigInt(before) > MAX_ID) throw new ValidationError("before must be a log id");
+    out.before = before;
   }
   const limit = query.limit === undefined ? 100 : Number(query.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
